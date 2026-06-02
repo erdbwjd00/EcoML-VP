@@ -232,18 +232,47 @@ def main():
                 if existing_columns:
                     inference_df = inference_df.drop(existing_columns, axis=1)
 
-                res = "EpiHR" if model.predict(inference_df)[0] == 0 else "non-EpiHR"
-                print(res)
+                prediction_code = model.predict(inference_df)[0]
+                res = "EpiHR" if prediction_code == 0 else "non-EpiHR"
+
+                detected_vfs = [col for col in inference_df.columns if col != 'VF_COUNT' and inference_df[col].values[0] == 1]
+                vf_count = int(inference_df['VF_COUNT'].values[0]) if 'VF_COUNT' in inference_df.columns else len(detected_vfs)
+
+                closest_references = []
+                if 'blast_res' in locals() and not blast_res.empty:
+                    top_matches = blast_res.sort_values(by=['pident', 'cov'], ascending=False).head(3)
+                    for _, row in top_matches.iterrows():
+                        closest_references.append({
+                            "reference_strain": row['sseqid'],
+                            "identity_percentage": round(row['pident'], 2),
+                            "coverage": round(row['cov'], 2)
+                        })
+
+                import json
+                output_report = {
+                    "input_fasta": args.input_fasta,
+                    "prediction": res,
+                    "interpretation_basis": {
+                        "closest_reference_strains": closest_references,
+                        "detected_virulence_genes_count": vf_count,
+                        "detected_virulence_genes": detected_vfs
+                    }
+                }
+
+                print(json.dumps(output_report, indent=4, ensure_ascii=False))
+
             except Exception as e:
                 print(f"Error processing abricate results: {e}", file=sys.stderr)
-                print("Pathotype-negative")
+                import json
+                print(json.dumps({"input_fasta": args.input_fasta, "prediction": "Pathotype-negative", "error": str(e)}))
         else:
-            print("Pathotype-negative")
+            import json
+            print(json.dumps({"input_fasta": args.input_fasta, "prediction": "Pathotype-negative"}))
     else:
-        print("Pathotype-negative")
+        import json
+        print(json.dumps({"input_fasta": args.input_fasta, "prediction": "Pathotype-negative"}))
     
-    # Clean up temporary files
     cleanup_files(output_file)
 
 if __name__ == "__main__":
-    main() 
+    main()
